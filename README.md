@@ -9,7 +9,11 @@ This is the official PyTorch implementation of **FLAT-LLM** **F**ine-grained **L
 Installation instructions can be found in [INSTALL.md](INSTALL.md).
 
 ---
-
+## ✅ Checklist
+- [x] Model Support: Llama-2, Llama-3, Mistral
+- [x] Multi-GPU Support: Llama-2 70B
+- [x] Post-pruning Quantization support: GPTQ
+      
 ## 🛠️ Run the Code
 
 All scripts for reproducing our main results (Table 1) are available in the [`scripts`](scripts) directory.
@@ -64,6 +68,18 @@ We evaluate zero-shot downstream task performance using the [EleutherAI LM Harne
 
 To benchmark inference speedup, we build upon the evaluation framework from [SliceGPT](https://github.com/microsoft/TransformerCompression).
 
+---
+
+### Citation
+If you find FLAT-LLM useful for your research and applications, please kindly cite using this BibTeX:
+
+    @article{tian2025flat,
+          title={FLAT-LLM: Fine-grained Low-rank Activation Space Transformation for Large Language Model Compression},
+          author={Tian, Jiayi and Solgi, Ryan and Lu, Jinming and Yang, Yifan and Li, Hai and Zhang, Zheng},
+          journal={arXiv preprint arXiv:2505.23966},
+          year={2025}
+        }
+        
 ---
 
 ## 📄 License

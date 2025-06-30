@@ -23,7 +23,7 @@ def get_llm(model_name, cache_dir="llm_weights"):
         device_map="auto"
     )
 
-    model.seqlen = model.config.max_position_embeddings 
+    model.seqlen = 4096
     print("model sequence length: ", model.seqlen)
     return model
 
@@ -216,7 +216,7 @@ def main():
     if args.save_model:
         # model.save_pretrained(args.save_model) # state_dict
         # torch.save(model, args.save_model)
-        torch.save(model.state_dict(), args.save_model)
+        torch.save(model.state_dict(), args.save_model+'/pytorch_model.bin')
         tokenizer.save_pretrained(args.save_model)
 
     # logging.info("method\tactual_sparsity\tppl_test", file=f, flush=True)

@@ -138,6 +138,10 @@ def prepare_calibration_input(model, n_samples, dataloader, device):
             super().__init__()
             self.module = module
         def forward(self, inp, **kwargs):
+            if inp.shape[0] < model.seqlen:
+                pad_size = model.seqlen - inp.shape[0]
+                inp = F.pad(inp, (0, 0, 0, pad_size))
+            print(inp.shape, inps[0].shape)
             inps[cache['i']] = inp
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']

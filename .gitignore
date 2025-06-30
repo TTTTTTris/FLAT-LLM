@@ -1,2 +1,3 @@
 out/
-lib/__pychache__/
+lib/__pycache__/
+gptq/__pycache__/

@@ -13,7 +13,6 @@ export CUDA_VISIBLE_DEVICES=$cuda_device
 # Define function to run python command
 run_python_command () {
     python main.py \
-    --cache_dir '/raid0-data/yifan/hub' \
     --model $model \
     --prune_method $1 \
     --sparsity_ratio $2 \

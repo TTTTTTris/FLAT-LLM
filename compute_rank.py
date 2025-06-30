@@ -48,12 +48,25 @@ def llama_2_70b():
     bi_score_angular = torch.tensor(bi_score_angular) / 4096 / 128
     return bi_score_angular, 80, np.array([dq, dk, dv, do, dmlp])
 
+def llama_3_8b():
+    bi_score_angular = 'ranks/wikitext2/llama-3-8b/bi_score.pt'
+    dq = 4096 * 4096
+    do = 4096 * 4096
+    dk = 4096 * 1024
+    dv = 4096 * 1024
+    dmlp = 4096 * 14336
+    bi_score_angular = torch.tensor(bi_score_angular) / 8192 / 128
+    return bi_score_angular, 32, np.array([dq, dk, dv, do, dmlp])
+
 bi_score_angular, N, sizes = llama_2_7b()
-print(bi_score_angular.sum())
+print(bi_score_angular.sum(), min(bi_score_angular), max(bi_score_angular))
 bi_score_angular, N, sizes = llama_2_13b()
-print(bi_score_angular.sum())
+print(bi_score_angular.sum(), min(bi_score_angular), max(bi_score_angular))
 bi_score_angular, N, sizes = mistral_7b()
-print(bi_score_angular.sum())
+print(bi_score_angular.sum(), min(bi_score_angular), max(bi_score_angular))
+bi_score_angular, N, sizes = llama_3_8b()
+print(bi_score_angular.sum(), min(bi_score_angular), max(bi_score_angular))
+
 # bi_score_angular, N, sizes = llama_2_70b()
 # print(bi_score_angular.sum())
 
@@ -86,18 +99,19 @@ import matplotlib.colors as mcolors
 
 ### choose the model you want to analyze
 dataset = 'wikitext2'
-model = "mistral-7b"  # Change this to the model you are analyzing
+model = "llama-2-13b"  # Change this to the model you are analyzing
 # bi_score_angular, N, sizes = llama_2_7b()
-# bi_score_angular, N, sizes = llama_2_13b()
-bi_score_angular, N, sizes = mistral_7b()
+bi_score_angular, N, sizes = llama_2_13b()
+# bi_score_angular, N, sizes = mistral_7b()
 # bi_score_angular, N, sizes = llama_2_70b()
+# bi_score_angular, N, sizes = llama_3_8b()
 
 import os
 os.makedirs(f"ranks/{dataset}/{model}", exist_ok=True)
 colormap = plt.get_cmap('rainbow')
 fig, ax = plt.subplots()
 plt.plot(range(len(bi_score_angular)), bi_score_angular, label='importance', color='gray', linestyle='--')
-for target in [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
+for target in [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
     r = 1 - target
     dq, dk, dv, do, dmlp = sizes
     r = (r * (dmlp * 3 + (dq + dk + dv + do)) - (dq + dk)) / (dmlp * 3 + (dv + do))
@@ -106,7 +120,7 @@ for target in [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
     C = r * N
     phi = proportional_allocation_with_cap(bi_score_angular, C)
     print(f'max remained ratio {phi.max()*100:.2f} %, min remained ratio {phi.min() * 100:.2f} %')
-    torch.save(phi, f"ranks/{dataset}/{model}/sparsity_score_{int(r*100)}%.pt")
+    # torch.save(phi, f"ranks/{dataset}/{model}/sparsity_score_{int(r*100)}%.pt")
     plt.plot(range(N), phi, label=f'reamined_ratio={target * 100}%', color=colormap(1 - target))
 sm = plt.cm.ScalarMappable(cmap=colormap, norm=mcolors.Normalize(vmin=0, vmax=100))
 cbar = plt.colorbar(sm, ax=ax, label='Remained Ratio (%)')

@@ -215,9 +215,9 @@ def main():
 
     if args.save_model:
         # model.save_pretrained(args.save_model) # state_dict
-        # torch.save(model, args.save_model)
-        torch.save(model.state_dict(), args.save_model+'/pytorch_model.bin')
-        tokenizer.save_pretrained(args.save_model)
+        torch.save(model, args.save_model+'/pytorch_model.bin')
+        # torch.save(model.state_dict(), args.save_model+'/pytorch_model.bin')
+        # tokenizer.save_pretrained(args.save_model)
 
     # logging.info("method\tactual_sparsity\tppl_test", file=f, flush=True)
     # logging.info(f"{args.prune_method}\t{sparsity_ratio:.4f}\t{ppl_test:.4f}", file=f, flush=True)

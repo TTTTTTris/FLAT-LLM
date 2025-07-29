@@ -183,7 +183,6 @@ def compute_bi(args, model, tokenizer, device=torch.device("cuda:0")):
         for name in wrapped_layers:
             handles.append(subset[name].register_forward_hook(add_batch(name, i)))
 
-        print(inps.device, outs.device)
         for j in range(args.nsamples):
             with torch.no_grad(): # input and output of current layer
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
@@ -221,6 +220,12 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
     model.config.use_cache = False 
     dtype = next(iter(model.parameters())).dtype
 
+    if args.bi_score != None:
+        bi_score = torch.load(args.bi_score + 'sparsity_score_' + str(args.sparsity_ratio) + '%.pt', weights_only=False)
+    else:
+        bi_score = torch.ones(len(layers)).to(device) * args.sparsity_ratio / 100
+    print(bi_score)
+
     print("loading calibdation data")
     # dataloader, _ = get_loaders("wikitext2",nsamples=args.nsamples,seed=args.seed,seqlen=model.seqlen,tokenizer=tokenizer)
     dataset = get_dataset(args.dataset)
@@ -240,12 +245,6 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
 
     layers = model.model.layers.to('cpu')
 
-    if args.bi_score != None:
-        bi_score = torch.load(args.bi_score + 'sparsity_score_' + str(args.sparsity_ratio) + '%.pt')
-    else:
-        bi_score = torch.ones(len(layers)).to(device) * args.sparsity_ratio / 100
-    print(bi_score)
-        
     for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
@@ -332,6 +331,10 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                     W1 = W1[idx, :]   
                     W0 = W0[idx, :] 
 
+                    subset['mlp.down_proj'].__dict__.pop('weight', None)
+                    subset['mlp.up_proj'].__dict__.pop('weight', None)
+                    subset['mlp.gate_proj'].__dict__.pop('weight', None)
+
                     # identity
                     # print(Sk @ torch.linalg.pinv(Sk.T @ wrapped_layers[name].cov @ Sk) @ Sk.T @ wrapped_layers[name].cov)
 
@@ -342,7 +345,6 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                     del W0, W1, W2, middle, cov, idx, ridge_inv, scores
                 torch.cuda.empty_cache()
 
-               
                 if name in ['self_attn.v_proj']:
                     # eig_num = wrapped_layers[name].eig_num
                     N_head_kv = model.config.num_key_value_heads
@@ -381,6 +383,8 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                     Wo = torch.bmm(Wo, Qr_o).transpose(0, 1).reshape(
                         shape[-1], -1)
                     
+                    subset['self_attn.v_proj'].__dict__.pop('weight', None)
+                    subset['self_attn.o_proj'].__dict__.pop('weight', None)
 
                     subset['self_attn.v_proj'].weight = torch.nn.Parameter(Wv.to(dtype))
                     # subset['self_attn.v_proj'].out_features = Wv.shape[0]
@@ -390,6 +394,8 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                     del Q, Qr, Qr_o, Wv, Wo, kv_indices
                 torch.cuda.empty_cache()  # Explicitly clear GPU memory
 
+        del wrapped_layers
+        torch.cuda.empty_cache()  # Explicitly clear GPU memory
         for j in range(args.nsamples):
             with torch.no_grad(): # output of current layer becomes input of next layer
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]

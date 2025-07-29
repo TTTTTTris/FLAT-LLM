@@ -49,13 +49,14 @@ def llama_2_70b():
     return bi_score_angular, 80, np.array([dq, dk, dv, do, dmlp])
 
 def llama_3_8b():
-    bi_score_angular = 'ranks/wikitext2/llama-3-8b/bi_score.pt'
+    bi_score_path = 'ranks/wikitext2/llama-3-8b/bi_score.pt'
+    bi_score_angular = torch.load(bi_score_path)
     dq = 4096 * 4096
     do = 4096 * 4096
     dk = 4096 * 1024
     dv = 4096 * 1024
     dmlp = 4096 * 14336
-    bi_score_angular = torch.tensor(bi_score_angular) / 8192 / 128
+    bi_score_angular = torch.tensor(bi_score_angular) / 4096 / 128
     return bi_score_angular, 32, np.array([dq, dk, dv, do, dmlp])
 
 bi_score_angular, N, sizes = llama_2_7b()
@@ -111,7 +112,7 @@ os.makedirs(f"ranks/{dataset}/{model}", exist_ok=True)
 colormap = plt.get_cmap('rainbow')
 fig, ax = plt.subplots()
 plt.plot(range(len(bi_score_angular)), bi_score_angular, label='importance', color='gray', linestyle='--')
-for target in [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
+for target in [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
     r = 1 - target
     dq, dk, dv, do, dmlp = sizes
     r = (r * (dmlp * 3 + (dq + dk + dv + do)) - (dq + dk)) / (dmlp * 3 + (dv + do))

@@ -23,8 +23,11 @@ def get_llm(model_name, cache_dir="llm_weights"):
         device_map="auto"
     )
 
-    model.seqlen = model.config.max_position_embeddings 
+    model.config._attn_implementation = "sdpa"
+    model.seqlen = 4096
     print("model sequence length: ", model.seqlen)
+    print(f"Attention implementation: {getattr(model.config, '_attn_implementation', 'not specified')}")
+    print(f"Output Attention: {getattr(model.config, 'output_attention', 'not specified')}")
     return model
 
 from lib.svd_llm import CustomLlamaDecoderLayer
@@ -354,7 +357,7 @@ if __name__ == '__main__':
         type=int, default=0, help='Seed for sampling the calibration data.'
     )
     parser.add_argument(
-        '--nsamples', type=int, default=256,
+        '--nsamples', type=int, default=128,
         help='Number of calibration data samples.'
     )
     parser.add_argument(
@@ -438,6 +441,21 @@ if __name__ == '__main__':
             model = state_dict.to(device)
         print(f"Loaded model from {args.model_path}")
 
+    # Verify all parameters are on the same device
+    devices = {param.device for param in model.parameters()}
+    print(f"Model devices: {devices}")
+    print(f"Model dtype: {model.dtype}")
+    
+    if len(devices) > 1:
+        print("WARNING: Model parameters are on multiple devices!")
+        # Force all parameters to the same device
+        model = model.to(device)
+        print(f"Moved all parameters to {device}")
+
+    # Final verification
+    model_device = next(model.parameters()).device
+    print(f"Final model device: {model_device}")
+
     model.eval()
     
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True)
@@ -469,11 +487,15 @@ if __name__ == '__main__':
     for i, layer in enumerate(model.model.layers):
         layer.self_attn.layer_idx = i
 
+    model.save_pretrained(args.save_model)
+    tokenizer.save_pretrained(args.save_model)
+
     ppl_test = eval_ppl(args, model, tokenizer, device=device)
     logging.info(f"pre-trained model {args.model} before pruning")
     logging.info(f"wikitext perplexity {ppl_test}")
 
-    torch.save({
-                'model': model,
-                'tokenizer': tokenizer
-            }, args.save_model) 
+
+    # torch.save({
+    #             'model': model,
+    #             'tokenizer': tokenizer
+    #         }, args.save_model) 

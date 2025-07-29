@@ -216,7 +216,6 @@ def compute_bi(args, model, tokenizer, device=torch.device("cuda:0")):
         for name in wrapped_layers:
             handles.append(subset[name].register_forward_hook(add_batch(name, i)))
 
-        print(inps.device, outs.device)
         for j in range(args.nsamples):
             with torch.no_grad(): # input and output of current layer
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
@@ -252,6 +251,13 @@ def compute_bi(args, model, tokenizer, device=torch.device("cuda:0")):
 def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
+    dtype = next(iter(model.parameters())).dtype
+
+    if args.bi_score != None:
+        bi_score = torch.load(args.bi_score + 'sparsity_score_' + str(args.sparsity_ratio) + '%.pt', weights_only=False)
+    else:
+        bi_score = torch.ones(len(layers)).to(device) * args.sparsity_ratio / 100
+    print(bi_score)
 
     print("loading calibdation data")
     # dataloader, _ = get_loaders("wikitext2",nsamples=args.nsamples,seed=args.seed,seqlen=model.seqlen,tokenizer=tokenizer)
@@ -272,12 +278,6 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
 
     layers = model.model.layers.to('cpu')
 
-    if args.bi_score != None:
-        bi_score = torch.load(args.bi_score + 'sparsity_score_' + str(args.sparsity_ratio) + '%.pt')
-    else:
-        bi_score = torch.ones(len(layers)).to(device) * args.sparsity_ratio / 100
-    print(bi_score)
-        
     for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
@@ -468,9 +468,9 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                         subset['self_attn.v_proj'].__dict__.pop('weight', None)
                         subset['self_attn.o_proj'].__dict__.pop('weight', None)
 
-                        subset['self_attn.v_proj'].weight = torch.nn.Parameter(Wv.to(torch.float16))
+                        subset['self_attn.v_proj'].weight = torch.nn.Parameter(Wv.to(dtype))
                         # subset['self_attn.v_proj'].out_features = Wv.shape[0]
-                        subset['self_attn.o_proj'].weight = torch.nn.Parameter(Wo.to(torch.float16))
+                        subset['self_attn.o_proj'].weight = torch.nn.Parameter(Wo.to(dtype))
                         # subset['self_attn.o_proj'].in_features = Wo.shape[1]
 
                         del Q, Qr, Qr_o, Wv, Wo, kv_indices

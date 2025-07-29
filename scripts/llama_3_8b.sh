@@ -4,7 +4,7 @@
 model=meta-llama/Meta-Llama-3-8B
 bi_score='ranks/wikitext2/llama-3-8b/'
 tol=0.96
-cuda_device=0
+cuda_device=4
 dataset=wikitext2
 
 # Set CUDA device visibility
@@ -25,7 +25,7 @@ run_python_command () {
     --seed 42
 }
 
-for sparsity_ratio in 77
+for sparsity_ratio in 88 77 66 55 44
 do
     save_path="your path/out_models/llama-3-8b/Llama-3-8b-hf_$sparsity_ratio"
     mkdir -p "$save_path"  

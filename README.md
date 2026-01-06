@@ -1,6 +1,6 @@
 # 🚀 FLAT-LLM
 
-This is the official PyTorch implementation of **FLAT-LLM** **F**ine-grained **L**ow-rank **A**ctivation Space **T**ransformation for Large Language Model Compression [arxiv](https://arxiv.org/pdf/2505.23966)
+This is the official PyTorch implementation of **FLAT-LLM** **F**ine-grained **L**ow-rank **A**ctivation Space **T**ransformation for Large Language Model Compression [arxiv](https://arxiv.org/pdf/2505.23966)  [Findings of EACL 2026]
 
 ---
 

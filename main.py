@@ -5,7 +5,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from importlib.metadata import version
 import logging
-from lib.prune import prune_flatllm, check_structual_pruning, compute_bi
+from lib.prune import prune_flatllm, check_structual_pruning, compute_bi, prune_flatllm_with_saved_activations, save_activations_all_layers
 from lib.eval import eval_ppl, eval_zero_shot
 from lib.svd_llm import CustomLlamaDecoderLayer
 
@@ -92,7 +92,7 @@ def main():
     parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration samples.')
     parser.add_argument('--sparsity_ratio', type=int, default=0, help='Sparsity level')
-    parser.add_argument("--prune_method", type=str, choices=["flatllm", "bi"], default=None)
+    parser.add_argument("--prune_method", type=str, choices=["flatllm", "bi", "save_act"], default=None)
     parser.add_argument("--cache_dir", default="llm_weights", type=str )
     parser.add_argument('--save', type=str, default=None, help='Path to save results.')
     parser.add_argument('--save_model', type=str, default=None, help='Path to save the pruned model.')
@@ -129,7 +129,7 @@ def main():
 
     logging.info(f"loading llm model {args.model}")
     model = get_llm(args.model, args.cache_dir)
-    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
     tokenizer.pad_token = tokenizer.eos_token
     
     # check_model_devices(model)
@@ -181,6 +181,9 @@ def main():
         logging.info("pruning starts")
         if args.prune_method == "flatllm":
             prune_flatllm(args, model, tokenizer, device)
+            # prune_flatllm_with_saved_activations(args, model, tokenizer, device)
+        # elif args.prune_method == "save_act":
+            # saved_activations = save_activations_all_layers(args, model, tokenizer, device)
         elif args.prune_method == "bi":
             compute_bi(args, model, tokenizer, device)
 

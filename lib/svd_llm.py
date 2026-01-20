@@ -1,4 +1,8 @@
-from transformers.models.llama.modeling_llama import LlamaSdpaAttention, LlamaFlashAttention2, LlamaConfig, LlamaRotaryEmbedding, apply_rotary_pos_emb, repeat_kv
+from transformers.models.llama.modeling_llama import LlamaSdpaAttention, LlamaFlashAttention2, LlamaConfig, LlamaRotaryEmbedding, rotate_half, repeat_kv, apply_rotary_pos_emb
+
+# Wrapper module for RoPE to allow hooks
+import torch.nn as nn
+
 from transformers.models.opt.modeling_opt import OPTAttention, OPTConfig, OPTDecoderLayer
 import math
 import torch
@@ -11,6 +15,64 @@ from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
+class SVDLinear3D(nn.Module):
+    def __init__(
+            self, 
+            num_heads: int, 
+            d_head: int, 
+            rank: int, 
+            device=None, 
+            dtype=None
+    ):
+        """
+        A 3D SVDLinear layer for multi-head batched matrix multiplication.
+
+        Args:
+            num_heads (int): Number of attention heads.
+            d_head (int): Dimension of each head.
+            rank (int): Rank of the low-rank approximation.
+            device (torch.device, optional): Device to place the tensors on.
+            dtype (torch.dtype, optional): Data type of the tensors.
+        """
+        super().__init__()
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        self.num_heads = num_heads
+        self.d_head = d_head
+        self.rank = rank
+        self.in_features = num_heads * d_head
+        self.out_features = num_heads * d_head
+
+        # Define U and V projections for each head
+        self.u_proj = nn.Parameter(torch.empty(num_heads, d_head, rank, **factory_kwargs)) # Nh x dh x r
+        self.v_proj = nn.Parameter(torch.empty(num_heads * rank, self.in_features, **factory_kwargs)) # Nh x r x d
+
+    def forward(self, x):
+        """
+        Forward pass for SVDLinear3D.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (num_heads, d_head, seq_len).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (num_heads, d_head, seq_len).
+        """
+        bs, seq_len, d = x.shape
+        x = x.reshape(-1, d)
+
+        # Compute V @ X
+        v_x = torch.matmul(self.v_proj, x.T)  # Shape: (num_heads * rank, seq_len)
+
+        # Compute U @ (V @ X) for each head
+        output = torch.bmm(self.u_proj, v_x.reshape(self.num_heads, self.rank, -1))  # Shape: (num_heads, d_head, seq_len)
+        output = output.reshape(-1, seq_len).transpose(0,1).reshape((bs, seq_len, d))
+        return output
+
+    def __repr__(self):
+        return (
+            f"SVDLinear3D(num_heads={self.num_heads}, d_head={self.d_head}, rank={self.rank}, "
+            f"u_proj_shape={tuple(self.u_proj.shape)}, v_proj_shape={tuple(self.v_proj.shape)})"
+        )
+    
 class CustomLlamaAttention(LlamaSdpaAttention):
     """
     A subclass of LlamaAttention that optionally supports custom behavior or dimensions.
@@ -48,7 +110,7 @@ class CustomLlamaAttention(LlamaSdpaAttention):
         bsz, q_len, _ = hidden_states.size()
         head_dim = self.v_proj.weight.shape[0] // self.num_key_value_heads
         
-        # position_ids = torch.arange(q_len, dtype=torch.long, device=hidden_states.device).unsqueeze(0).expand(bsz, -1)
+        # position_ids = torch.arange(q_len, dtype=torch.float16, device=hidden_states.device).unsqueeze(0).expand(bsz, -1)
         
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
@@ -175,7 +237,7 @@ class CustomLlamaFlashAttention2(LlamaFlashAttention2):
             elif hasattr(self.config, "_pre_quantization_dtype"):
                 target_dtype = self.config._pre_quantization_dtype
             else:
-                target_dtype = self.q_proj.weight.dtype
+                target_dtype = self.v_proj.weight.dtype
 
             logger.warning_once(
                 f"The input hidden states seems to be silently casted in float32, this might be related to"

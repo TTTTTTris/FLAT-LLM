@@ -22,8 +22,8 @@ def llama_2_13b():
     do = 5120 * 5120
     dk = 5120 * 5120
     dv = 5120 * 5120
-    dmlp = 4096 * 13824
-    bi_score_angular = torch.tensor(bi_score_angular) / 4096 / 128
+    dmlp = 5120 * 13824
+    bi_score_angular = torch.tensor(bi_score_angular) / 5120 / 128
     return bi_score_angular, 40, np.array([dq, dk, dv, do, dmlp])
 
 def mistral_7b():
@@ -96,13 +96,33 @@ def proportional_allocation_with_cap(t, C):
             break
     return w
 
+def compute_optimal_sparsity_torch(s, epsilon=0.1, target_avg_sparsity=0.5): # modegpt
+    """
+    Compute optimal sparsity using the softmax-based closed-form solution (in PyTorch).
+
+    Args:
+        s: 1D torch.Tensor of importance scores (length L)
+        epsilon: entropy smoothing parameter
+        target_avg_sparsity: desired global sparsity (e.g., 0.5 for 50%)
+
+    Returns:
+        1D torch.Tensor of per-layer sparsity scores (phi)
+    """
+    s = s.to(torch.float32)
+    L = s.shape[0]
+    
+    softmax_weights = torch.softmax(-s / epsilon, dim=0)
+    phi = L * target_avg_sparsity * softmax_weights
+    
+    return 1-phi
+
 import matplotlib.colors as mcolors
 
 ### choose the model you want to analyze
 dataset = 'wikitext2'
-model = "llama-2-13b"  # Change this to the model you are analyzing
-# bi_score_angular, N, sizes = llama_2_7b()
-bi_score_angular, N, sizes = llama_2_13b()
+model = "llama-2-7b"  # Change this to the model you are analyzing
+bi_score_angular, N, sizes = llama_2_7b()
+# bi_score_angular, N, sizes = llama_2_13b()
 # bi_score_angular, N, sizes = mistral_7b()
 # bi_score_angular, N, sizes = llama_2_70b()
 # bi_score_angular, N, sizes = llama_3_8b()
@@ -112,10 +132,10 @@ os.makedirs(f"ranks/{dataset}/{model}", exist_ok=True)
 colormap = plt.get_cmap('rainbow')
 fig, ax = plt.subplots()
 plt.plot(range(len(bi_score_angular)), bi_score_angular, label='importance', color='gray', linestyle='--')
-for target in [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
+for target in [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
     r = 1 - target
     dq, dk, dv, do, dmlp = sizes
-    r = (r * (dmlp * 3 + (dq + dk + dv + do)) - (dq + dk)) / (dmlp * 3 + (dv + do))
+    # r = (r * (dmlp * 3 + (dq + dk + dv + do)) - (dq + dk)) / (dmlp * 3 + (dv + do)) # uncomment it if do not compress QK
     print(f'total remained ratio: {(1-target)*100:.2f} %, remained rank ratio (V,O,MLP):{r*100:.2f} %')
     # C = (1 - target) * N
     C = r * N

@@ -3,3 +3,6 @@ lib/__pycache__/
 gptq/__pycache__/
 *.pyc
 ranks/modegpt/
+*.txt
+log/
+wandb/

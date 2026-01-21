@@ -10,6 +10,9 @@ Installation instructions can be found in [INSTALL.md](INSTALL.md).
 
 ---
 ## ✅ Checklist
+- [x] Throughput/Memory Efficiency Evaluation
+- [x] Zero-shot/Few-shot Downstream Task Evaluation
+- [x] Head-wise QK Support
 - [x] Model Support: Llama-2, Llama-3, Mistral
 - [x] Multi-GPU Support: Llama-2 70B
 - [x] Post-pruning Quantization support: GPTQ
@@ -27,13 +30,16 @@ All scripts for reproducing our main results (Table 1) are available in the [`sc
 
 ### ✂️ FLAT-LLM Pruning
 
-Run one of the following scripts to prune and evaluate the corresponding model:
+Run one of the following scripts to prune and evaluate the PPL of corresponding model:
 - `llama_7b.sh` # use 1 A100 40GB
 - `llama_13b.sh` # use 1 A100 40GB
 - `llama_70b.sh` # use 4 A100 40GB
 - `mistral.sh` # use 1 A100 40GB
 
 These reproduce the perplexity results reported in Table 1 of the paper when using wikitext2 for calibration.
+
+### 🔢 FLAT-LLM Post-pruning Quantization
+Run `scripts/gptq.sh` # load pruned flat-llm model
 
 ---
 
@@ -62,11 +68,11 @@ These reproduce the perplexity results reported in Table 1 of the paper when usi
 
 ### 🧠 Zero-Shot Evaluation
 
-We evaluate zero-shot downstream task performance using the [EleutherAI LM Harness](https://github.com/EleutherAI/lm-evaluation-harness). Please use the modified code for zero-shot/few-shot evaluation in [lm_eval](https://github.com/TTTTTTris/lm_eval) repo.
+We evaluate zero-shot downstream task performance using the [EleutherAI LM Harness](https://github.com/EleutherAI/lm-evaluation-harness). Run `scripts/eval.sh` to evaluate the zero-shot / few-shot downstream accuracy.
 
 ### ⚡ Inference Speedup
 
-To benchmark inference speedup, we build upon the evaluation framework from [SliceGPT](https://github.com/microsoft/TransformerCompression).
+To benchmark inference speedup, we build upon the evaluation framework from [SliceGPT](https://github.com/microsoft/TransformerCompression). Run `scripts/test_speedup.sh` to evalaute the inference throughput and cuda memory usage.
 
 ---
 

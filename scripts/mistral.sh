@@ -2,11 +2,10 @@
 
 # Set common variables
 model=mistralai/Mistral-7B-v0.1
-bi_score='ranks/wikitext2/mistral-7b/'
+bi_score='ranks/wikitext2/mistral-7b/QK/'
 tol=0.96
-cuda_device=1
+cuda_device=3
 dataset=wikitext2
-
 # Set CUDA device visibility
 export CUDA_VISIBLE_DEVICES=$cuda_device
 
@@ -21,10 +20,11 @@ run_python_command () {
     --tol $4 \
     --nsamples 256 \
     --save_model $5 \
+    --cache_dir $HF_HOME \
     --seed 42
 }
 
-for sparsity_ratio in 88 # 77 66 55 44
+for sparsity_ratio in 90 80 70 60 50 # 88 77 66 55 44
 do
     save_path="your path/out_models/mistral-7b/Mistral-7b_$sparsity_ratio"
     mkdir -p "$save_path"  

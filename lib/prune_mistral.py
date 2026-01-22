@@ -9,6 +9,7 @@ from .data_utils import get_dataset, prepare_dataloader, prepare_test_dataloader
 import logging
 
 from transformers.models.mistral.modeling_mistral import MistralAttention, MistralConfig, MistralDecoderLayer
+from lib.svd_llm import SVDLinear3D
 
 def find_layers(module, layers=[nn.Linear], name=''):
     """
@@ -116,7 +117,6 @@ def prepare_calibration_input(model, n_samples, dataloader, device):
             raise ValueError
     layers[0] = Catcher(layers[0])
     for batch in dataloader:
-        print(batch)
         try:
             data = batch[0].to(device) if type(batch) is tuple else batch.unsqueeze(0).to(device)
             model(data)
@@ -281,14 +281,14 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
             def tmp(_, inp, out):
                 wrapped_layers[name].add_batch(inp[0].data, out.data, flag)
             return tmp
-        
+
         handles = []
 
         if bi_score[i] < 1:
             for name in wrapped_layers:
                 if name in ['mlp.down_proj']:
                     handles.append(subset[name].register_forward_hook(add_batch(name, 0)))
-                elif name in ['self_attn.v_proj']:
+                elif name in ['self_attn.v_proj', 'self_attn.q_proj', 'self_attn.k_proj']:
                     handles.append(subset[name].register_forward_hook(add_batch(name, 1)))
 
         for j in range(args.nsamples):
@@ -301,7 +301,6 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
         if bi_score[i] < 1:
             for name in subset:
                 shape = subset[name].weight.shape
-
                 if name in ['mlp.down_proj']:
                     # size = math.prod(shape)
                     # eig_num = wrapped_layers[name].eig_num
@@ -346,7 +345,6 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                 torch.cuda.empty_cache()
 
                 if name in ['self_attn.v_proj']:
-                    # eig_num = wrapped_layers[name].eig_num
                     N_head_kv = model.config.num_key_value_heads
                     N_head = model.config.num_attention_heads
                     d_head = shape[0] // N_head_kv
@@ -393,7 +391,36 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
 
                     del Q, Qr, Qr_o, Wv, Wo, kv_indices
                 torch.cuda.empty_cache()  # Explicitly clear GPU memory
+            if name in ['self_attn.q_proj', 'self_attn.k_proj']:
 
+                    N_head_kv = model.config.num_key_value_heads
+                    d_head = shape[0] // N_head_kv
+
+                    eig_num = torch.tensor([int(bi_score[i] * d_head)] * N_head_kv)
+                    # max_eig_num = eig_num.max().item()  # Find the maximum eig_num to slice up to the largest value
+                    logging.info(f"structural pruning layer {i}, {name}:, {eig_num}, {shape[0]}")
+                    factor = subset[name].weight.to(torch.double)
+                    Q = wrapped_layers[name].eig_vec.to(torch.double).to(device) # [head, d_h, d_h]
+                    Qr = torch.stack([
+                            Q[i, :, :eig_num[i]]
+                            for i in range(Q.shape[0])
+                        ], dim=0) # [head, d_h, r] [32, 128, 18]
+                    # Create an SVDLinear layer
+                    svd_layer = SVDLinear3D(num_heads=N_head_kv, d_head=int(shape[0] / N_head_kv), 
+                                            rank=eig_num[0], device=device, dtype=torch.float16)
+                    svd_layer.u_proj.data = Qr.to(torch.float16) # [32, 128, 18]
+                    svd_layer.v_proj.data = torch.bmm(Qr.transpose(1,2), factor.reshape( # [32, 18, 128] x [32, 128, 4096] -> [32, 18, 4096]
+                                                N_head_kv, d_head, -1)).to(torch.float16).reshape(-1, shape[-1])
+                    # Replace the TLinear layer with the new nn.Linear layer
+                    parent_module, child_name = layer, name
+                    if '.' in name:
+                        *parent_path, child_name = name.split('.')
+                        for part in parent_path:
+                            parent_module = getattr(parent_module, part)
+                    setattr(parent_module, child_name, svd_layer)
+
+                    del factor, Q, Qr, svd_layer
+            torch.cuda.empty_cache()  # Explicitly clear GPU memory
         del wrapped_layers
         torch.cuda.empty_cache()  # Explicitly clear GPU memory
         for j in range(args.nsamples):

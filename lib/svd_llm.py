@@ -64,7 +64,7 @@ class SVDLinear3D(nn.Module):
 
         # Compute U @ (V @ X) for each head
         output = torch.bmm(self.u_proj, v_x.reshape(self.num_heads, self.rank, -1))  # Shape: (num_heads, d_head, seq_len)
-        output = output.reshape(-1, seq_len).transpose(0,1).reshape((bs, seq_len, d))
+        output = output.reshape(-1, seq_len).transpose(0,1).reshape((bs, seq_len, -1))
         return output
 
     def __repr__(self):

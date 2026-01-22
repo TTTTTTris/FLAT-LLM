@@ -22,7 +22,10 @@ class WrappedGPT:
             self.rows = layer.weight.data.shape[0]
             self.columns = layer.weight.data.shape[1]
             self.cov = torch.zeros((self.columns, self.columns), device=self.dev)
-            self.cov_v = torch.zeros((self.d_head_kv, self.rows // self.d_head_kv, self.rows // self.d_head_kv), device=self.dev)
+            if self.rows == self.columns:
+                self.cov_v = torch.zeros((self.d_head, self.rows // self.d_head, self.rows // self.d_head), device=self.dev)
+            else:
+                self.cov_v = torch.zeros((self.d_head_kv, self.rows // self.d_head_kv, self.rows // self.d_head_kv), device=self.dev)
 
         self.nsamples = 0
 
@@ -157,7 +160,10 @@ class WrappedGPT:
         else:
             if len(out.shape) == 4: # [B, Nh, S, dh]
                 out = out.transpose(1, 2) # [B, S, Nh, dh]
-            x_tensor = out.reshape(-1, self.d_head_kv, self.rows // self.d_head_kv).transpose(0, 1) # [n_head, seqlen, dh]
+            if self.rows != self.columns:
+                x_tensor = out.reshape(-1, self.d_head_kv, self.rows // self.d_head_kv).transpose(0, 1) # [n_head, seqlen, dh]
+            else:
+                x_tensor = out.reshape(-1, self.d_head, self.rows // self.d_head).transpose(0, 1) # [n_head, seqlen, dh]
             x_tensor = x_tensor.to(torch.double)
             self.cov_v += torch.bmm(x_tensor.transpose(1,2), x_tensor)
             if (self.nsamples == self.args.nsamples - 1):

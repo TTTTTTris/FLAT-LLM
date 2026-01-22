@@ -150,7 +150,6 @@ def prepare_calibration_input(model, n_samples, dataloader, device):
             raise ValueError
     layers[0] = Catcher(layers[0])
     for batch in dataloader:
-        print(batch)
         try:
             data = batch[0].to(device) if type(batch) is tuple else batch.to(device)
             model(data)
@@ -630,7 +629,6 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
     for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
-        # subset = find_layers(layer, layers=[nn.Linear, RoPEWrapper])
 
         if f"model.layers.{i}" in model.hf_device_map:   ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
             dev = model.hf_device_map[f"model.layers.{i}"]
@@ -664,12 +662,7 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
             def tmp(_, inp, out):
                 wrapped_layers[name].add_batch(inp[0].data, out.data, flag)
             return tmp
-        
-        # def add_batch_rope(name):
-        #     def tmp(_, inp, out):
-        #         wrapped_layers[name].add_batch_qk(out[0].data, out[1].data)
-        #     return tmp
-                
+
         handles = []
 
         if bi_score[i] < 1:
@@ -677,10 +670,7 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                 if name in ['mlp.down_proj']:
                     handles.append(subset[name].register_forward_hook(add_batch(name, 0)))
                 elif name in ['self_attn.v_proj', 'self_attn.q_proj', 'self_attn.k_proj']:
-                    handles.append(subset[name].register_forward_hook(add_batch(name, 1))) # flatllm
-                    # handles.append(subset[name].register_forward_hook(add_batch(name, 0))) # modegpt
-                # elif name in ['self_attn.rope_module']:
-                    # handles.append(subset[name].register_forward_hook(add_batch_rope(name)))
+                    handles.append(subset[name].register_forward_hook(add_batch(name, 1)))
 
         for j in range(args.nsamples):
             with torch.no_grad(): # input and output of current layer
@@ -691,9 +681,8 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
 
         if bi_score[i] < 1:
             for name in subset:
-
+                shape = subset[name].weight.shape
                 if name in ['mlp.down_proj']:
-                    shape = subset[name].weight.shape
                     # size = math.prod(shape)
                     # eig_num = wrapped_layers[name].eig_num
                     eig_num = int(bi_score[i] * shape[1])
@@ -756,10 +745,7 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                 torch.cuda.empty_cache()
 
                 if name in ['self_attn.v_proj']: # flatllm
-                    print('Nheads:', model.config.num_key_value_heads, model.config.num_attention_heads)
-                    shape = subset[name].weight.shape
                     if model.config.num_key_value_heads == model.config.num_attention_heads:
-                    # eig_num = wrapped_layers[name].eig_num
                         N_head = model.config.num_attention_heads
                         d_head = shape[0] // N_head
                         eig_num = torch.tensor([int(bi_score[i] * d_head)] * N_head)
@@ -836,38 +822,64 @@ def prune_flatllm(args, model, tokenizer, device=torch.device("cuda:0")):
                 torch.cuda.empty_cache()  # Explicitly clear GPU memory
 
                 if name in ['self_attn.q_proj', 'self_attn.k_proj']:
-                    shape = subset[name].weight.shape
-                    # eig_num = wrapped_layers[name].eig_num
-                    d_head = shape[0] // model.config.num_attention_heads
-                    eig_num = torch.tensor([int(bi_score[i] * d_head)] * model.config.num_attention_heads)
-                    logging.info(f"structural pruning layer {i}, {name}:, {eig_num}, {shape[0]}")
-                    max_eig_num = eig_num.max().item()  # Find the maximum eig_num to slice up to the largest value
-                    factor = subset[name].weight.to(torch.double)
-                    Q = wrapped_layers[name].eig_vec.to(torch.double).to(device) # [head, d_h, d_h]
-                    Qr = torch.stack([
-                            Q[i, :, :eig_num[i]]
-                            for i in range(Q.shape[0])
-                        ], dim=0) # [head, d_h, r] [32, 128, 18]
-                    # Qr = torch.stack([
-                    #         F.pad(Q[i, :, :eig_num[i]], (0, max_eig_num - eig_num[i]))
-                    #         for i in range(Q.shape[0])
-                    #     ], dim=0) # [head, d_h, r] [32, 128, 18]
-                    # Create an SVDLinear layer
-                    svd_layer = SVDLinear3D(num_heads=model.config.num_attention_heads, d_head=int(shape[0] / model.config.num_attention_heads), 
-                                            rank=max_eig_num, device=device, dtype=torch.float16)
-                    svd_layer.u_proj.data = Qr.to(torch.float16) # [32, 128, 18]
-                    svd_layer.v_proj.data = torch.bmm(Qr.transpose(1,2), factor.reshape( # [32, 18, 128] x [32, 128, 4096] -> [32, 18, 4096]
-                      model.config.num_attention_heads, d_head, -1)).to(torch.float16).reshape(-1, shape[-1])
-                    # Replace the TLinear layer with the new nn.Linear layer
-                    parent_module, child_name = layer, name
-                    if '.' in name:
-                        *parent_path, child_name = name.split('.')
-                        for part in parent_path:
-                            parent_module = getattr(parent_module, part)
-                    setattr(parent_module, child_name, svd_layer)
+                    if shape[0] == shape[1]:
+                        N_head = model.config.num_attention_heads
+                        d_head = shape[0] // N_head
+                        eig_num = torch.tensor([int(bi_score[i] * d_head)] * N_head)
+                        # max_eig_num = eig_num.max().item()  # Find the maximum eig_num to slice up to the largest value
+                        logging.info(f"structural pruning layer {i}, {name}:, {eig_num}, {shape[0]}")
+                        factor = subset[name].weight.to(torch.double)
+                        Q = wrapped_layers[name].eig_vec.to(torch.double).to(device) # [head, d_h, d_h]
+                        Qr = torch.stack([
+                                Q[i, :, :eig_num[i]]
+                                for i in range(Q.shape[0])
+                            ], dim=0) # [head, d_h, r] [32, 128, 18]
+                        # Create an SVDLinear layer
+                        svd_layer = SVDLinear3D(num_heads=N_head, d_head=int(shape[0] / N_head), 
+                                                rank=eig_num[0], device=device, dtype=torch.float16)
+                        # print(svd_layer.u_proj.data.shape, svd_layer.v_proj.data.shape, Qr.shape, factor.shape, N_head, d_head) 
+                        # torch.Size([32, 128, 126]) torch.Size([4032, 4096]) torch.Size([8, 512, 126]) torch.Size([4096, 4096]) 32 128
+                        svd_layer.u_proj.data = Qr.to(torch.float16) # [32, 128, 18]
+                        svd_layer.v_proj.data = torch.bmm(Qr.transpose(1,2), factor.reshape( # [32, 18, 128] x [32, 128, 4096] -> [32, 18, 4096]
+                                                    N_head, d_head, -1)).to(torch.float16).reshape(-1, shape[-1])
+                        # Replace the TLinear layer with the new nn.Linear layer
+                        parent_module, child_name = layer, name
+                        if '.' in name:
+                            *parent_path, child_name = name.split('.')
+                            for part in parent_path:
+                                parent_module = getattr(parent_module, part)
+                        setattr(parent_module, child_name, svd_layer)
 
-                    del factor, Q, Qr, svd_layer
-                    torch.cuda.empty_cache()  # Explicitly clear GPU memory
+                        del factor, Q, Qr, svd_layer
+                    else:
+                        N_head_kv = model.config.num_key_value_heads
+                        d_head = shape[0] // N_head_kv
+
+                        eig_num = torch.tensor([int(bi_score[i] * d_head)] * N_head_kv)
+                        # max_eig_num = eig_num.max().item()  # Find the maximum eig_num to slice up to the largest value
+                        logging.info(f"structural pruning layer {i}, {name}:, {eig_num}, {shape[0]}")
+                        factor = subset[name].weight.to(torch.double)
+                        Q = wrapped_layers[name].eig_vec.to(torch.double).to(device) # [head, d_h, d_h]
+                        Qr = torch.stack([
+                                Q[i, :, :eig_num[i]]
+                                for i in range(Q.shape[0])
+                            ], dim=0) # [head, d_h, r] [32, 128, 18]
+                        # Create an SVDLinear layer
+                        svd_layer = SVDLinear3D(num_heads=N_head_kv, d_head=int(shape[0] / N_head_kv), 
+                                                rank=eig_num[0], device=device, dtype=torch.float16)
+                        svd_layer.u_proj.data = Qr.to(torch.float16) # [32, 128, 18]
+                        svd_layer.v_proj.data = torch.bmm(Qr.transpose(1,2), factor.reshape( # [32, 18, 128] x [32, 128, 4096] -> [32, 18, 4096]
+                                                    N_head_kv, d_head, -1)).to(torch.float16).reshape(-1, shape[-1])
+                        # Replace the TLinear layer with the new nn.Linear layer
+                        parent_module, child_name = layer, name
+                        if '.' in name:
+                            *parent_path, child_name = name.split('.')
+                            for part in parent_path:
+                                parent_module = getattr(parent_module, part)
+                        setattr(parent_module, child_name, svd_layer)
+
+                        del factor, Q, Qr, svd_layer
+                torch.cuda.empty_cache()  # Explicitly clear GPU memory
 
                 # if name in ['self_attn.v_proj']: # modegpt
                 #     print('Nheads:', model.config.num_key_value_heads, model.config.num_attention_heads)

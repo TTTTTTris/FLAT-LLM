@@ -120,10 +120,10 @@ import matplotlib.colors as mcolors
 
 ### choose the model you want to analyze
 dataset = 'wikitext2'
-model = "llama-2-7b"  # Change this to the model you are analyzing
-bi_score_angular, N, sizes = llama_2_7b()
+model = "mistral-7b"  # Change this to the model you are analyzing
+# bi_score_angular, N, sizes = llama_2_7b()
 # bi_score_angular, N, sizes = llama_2_13b()
-# bi_score_angular, N, sizes = mistral_7b()
+bi_score_angular, N, sizes = mistral_7b()
 # bi_score_angular, N, sizes = llama_2_70b()
 # bi_score_angular, N, sizes = llama_3_8b()
 
@@ -141,7 +141,7 @@ for target in [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
     C = r * N
     phi = proportional_allocation_with_cap(bi_score_angular, C)
     print(f'max remained ratio {phi.max()*100:.2f} %, min remained ratio {phi.min() * 100:.2f} %')
-    # torch.save(phi, f"ranks/{dataset}/{model}/sparsity_score_{int(r*100)}%.pt")
+    torch.save(phi, f"ranks/{dataset}/{model}/QK/sparsity_score_{int(r*100)}%.pt")
     plt.plot(range(N), phi, label=f'reamined_ratio={target * 100}%', color=colormap(1 - target))
 sm = plt.cm.ScalarMappable(cmap=colormap, norm=mcolors.Normalize(vmin=0, vmax=100))
 cbar = plt.colorbar(sm, ax=ax, label='Remained Ratio (%)')
